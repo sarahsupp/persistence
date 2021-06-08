@@ -9,13 +9,329 @@ output: html_document
 knitr::opts_chunk$set(echo = TRUE)
 
 library(tidyverse)
+
+library(tseries)
+library(betapart)
+library(vegan)
+
+set.seed(123)
 ```
 
-bring in the Konza Praire small mammal burn study data from 1994-2011. 
+bring in the Konza Praire small mammal burn study data from 1994-2011 (19 years total). 
 Burns at varying intevals, can compare periodic disturbance effects from no, infrequent, frequent
+spB; not burned?
+FB; Fall Burn; burned only in wet years
+SuB; Burned biennially (every 2 years)
+WA; Winter Burn; unburned for 3 consecutive years, then burned for 3 consecutive years
+FA; Fall Burn; 4 year burn treatment
+WB; Winter Burn; 4 year burn treatment
+004b; remove, not sure?
 ```{r}
 dat <- read_csv("CSM041.csv")
 surv <- read_csv("CSM042.csv")
+```
+Make some basic exploratory plots and summaries
+***warning*** I have not yet investigated or controlled for sampling variation among years, and will want to correct for that before putting anything into a document, proposal, etc. Just an initial start to getting code down that will work as proof of concept.
 
+Plot the counts of species (lump spring and fall samples) across years and plot
+```{r}
+#remove treatment/watershed 004b because I don't know what it is
+#remove dec because it's not sampled for all treatments in all years
+surv <- surv %>%
+  filter(Watershed != "004b") %>%
+  filter(Season != "dec") %>%
+  filter(Recyear != 1993)
+
+#summing across spring and autumn samples, because lumping annually makes sense here
+surv %>%
+  group_by(Watershed, Recyear) %>%
+  summarize(spcount = n_distinct(Species)) %>%
+  ggplot(aes(Recyear, spcount, group=Watershed)) + geom_line(aes(col=Watershed)) + facet_wrap(~Watershed)
+```
+Calculate species persistence as proportion of years present for each treatment
+```{r}
+surv %>%
+  group_by(Watershed, Species) %>%
+  summarize(num_years=n_distinct(Recyear)) %>%
+  ggplot(aes(Species, num_years)) + geom_point(aes(col=Watershed)) + facet_wrap(~Watershed)
+
+persistence <- surv %>%
+  filter(Recyear != 1993) %>%
+  group_by(Watershed, Species) %>%
+  summarize(num_years = n_distinct(Recyear), 
+            prop_years = round(num_years/18,3))
+
+ggplot(persistence, aes(Species, prop_years)) + geom_point(aes(col=Watershed)) + facet_wrap(~Watershed)
+
+```
+
+Try Gotelli and Faye's code out for incidence patterns
+First, the functions
+```{r}
+#Classification scheme
+getTrends<-function(x) {
+  
+  time <- rep("late",length(x))
+  time[1:(round(length(x)/2))] <- "early"
+  
+  # tabulate f
+  z_x <- table(x,time)
+  
+  tslen<-length(x)
+  tssum<-sum(x)
+  l<-c()
+  
+  for(k in 1:(tslen-1)){
+    j<-abs(x[k+1]-x[k])
+    l<-c(l, j)
+    v<-sum(l)
+  }
+  
+  bsline<-x[1]
+  
+  if(tslen>tssum) {
+    
+    rownames(z_x) <- c("absent","present")
+    # get p value
+    p_val <- chisq.test(z_x)$p.val
+    
+    # get early and late fractions
+    f_early <- z_x["present","early"]/sum(z_x[,1])
+    f_late <- z_x["present","late"]/sum(z_x[,2])
+   
+    if((f_early > f_late) & (p_val <= 0.05)) trend<--1
+    if((f_early < f_late) & (p_val <= 0.05)) trend<-1
+    if(p_val > 0.05) trend<-0
+    runsPV<-runs.test(as.factor(x),alternative="less")
+    runsTestPV<-runsPV$p.value
+    if(runsTestPV<0.05) trendPlus<-10
+    if(runsTestPV>0.05)trendPlus<-5
+  }
+  if(tslen==tssum) {
+    p_val <- NA
+    f_early <- NA
+    f_late <- NA
+    runsTestPV<-NA
+    trend<-NA
+    trendPlus<-NA
+  }
+  
+  statSumm<-list("trendPlus"=trendPlus, "chiPval"=p_val, "runsPval"=runsTestPV, 
+                 "trend"=trend, "bsline"=bsline)
+  return(statSumm)
+} 
+
+
+#Calculating compositional dissimilarity
+getBeta<-function(df) {
+  
+  yr<-unique(df[, 1]) 
+  df<-df[,-1]
+  bindf<-df 
+  bindf[bindf>0]<-1
+  getBas<-beta.pair(df, index.family="jac")$beta.jac
+  getChao<-vegdist(bindf, method="chao")
+  
+  basJac<-c(1, getBas[1:(nrow(spec_df)-1)])
+  chaoJac<-c(1, getChao[1:(nrow(spec_df2)-1)])
+  
+  df_out<-data.frame(Year=yr, J=basJac, chaoJac=chaoJac)
+ 
+  return(df_out)
+} 
+
+#Randomisation functions
+## where t1 is the long form time series and p1 is the subset of species with the classification to be randomised
+
+### this first function takes account only of presence and absence
+
+getRandomisation<-function(t1, p1) {
+  
+  df<-data.frame()
+  nameRow<-c()
+  
+  m1<-as.data.frame(pivot_wider(t1, names_from=Year, values_from=Abundance))
+  m1[is.na(m1)]<-0
+  nameCol<-unique(t1$Year)
+  
+  for(i in 1:length(m1$Species)) {
+    x<-m1[i,]
+    sp<-as.vector(m1[i,1])
+    dird<-as.vector(unique(p1$Species))
+    if(sp %in% dird) {
+      nameRow<-c(nameRow, sp)
+      x<-x[-1]
+      x[x>0]<-1
+      y<-as.data.frame(t(x))[,1]
+      v<-sample(y[-1])
+      z<-c(y[1], v)
+      df<-rbind(df, z)
+    }
+    if(!sp %in% dird) {
+      nameRow<-c(nameRow, sp)
+      x<-x[-1]
+      x[x>0]<-1
+      y<-as.data.frame(t(x))[,1]
+      z<-y
+      df<-rbind(df, z)
+    }
+  }
+  
+  colnames(df)<-nameCol
+  rownames(df)<-nameRow
+ 
+  nameCR<-c("Species", nameCol)
+  names(df)<-nameCR
+  df2<-as.data.frame(t(df))
+  df3<-df2[-1,]
+  names(df3)
+  names(df3)<-nameRow
+  
+  return(df3)
+}
+
+### function to replace sample to shuffle weighted by abundance
+
+abun_shuffle <- function() {
+  
+  occur_shuf <- rep(0,length(occur)) # set up an empty vector
+  index <- seq_along(occur) # set up vector of indices
+  presence <- sample(x=index,size=sum(occur),prob=abun) # select index values 
+  occur_shuf[presence] <- 1 #assign occurrences
+  return(occur_shuf)
+} # end of abun_shuffle
+# -------------------------------------
+
+
+## revised randomisation function which now includes the vector of abundances for a time series
+
+getAbundRandomisation<-function(t1, p1, rf1) {
+  
+  df<-data.frame()
+  nameRow<-c()
+  
+  m1<-as.data.frame(pivot_wider(t1, names_from=Year, values_from=Abundance))
+  m1[is.na(m1)]<-0
+  nameCol<-unique(t1$Year)
+  
+  for(i in 1:length(m1$Species)) {
+    x<-m1[i,]
+    sp<-as.vector(m1[i,1])
+    dird<-as.vector(unique(p1$Species))
+    if(sp %in% dird) {
+      nameRow<-c(nameRow, sp)
+      x<-x[-1]
+      x[x>0]<-1
+      y<-as.data.frame(t(x))[,1]
+      v<-abun_shuffle(y[-1], rf1[-1])
+      z<-c(y[1], v)
+      df<-rbind(df, z)
+    }
+    if(!sp %in% dird) {
+      nameRow<-c(nameRow, sp)
+      x<-x[-1]
+      x[x>0]<-1
+      y<-as.data.frame(t(x))[,1]
+      z<-y
+      df<-rbind(df, z)
+    }
+  }
+  
+  colnames(df)<-nameCol
+  rownames(df)<-nameRow
+  
+  nameCR<-c("Species", nameCol)
+  names(df)<-nameCR
+  df2<-as.data.frame(t(df))
+  df3<-df2[-1,]
+  names(df3)
+  names(df3)<-nameRow
+  
+  return(df3)
+}
+
+#Other functions
+getSummStats<-function(x, y, namesCl) {
+  x<-na.omit(x)
+  y<-na.omit(y)
+  names(x)<-c("nx")
+  names(y)<-c("ny")
+  meanCl<-mean(x$nx)
+  medianCl<-median(x$nx)
+  sd<-sd(x$nx)
+  noRF<-sum(y$ny)
+  confCl<-round(quantile(x$nx, probs=c(0.025,0.975)), 4)
+  v<-c("class"=namesCl, "mean"=meanCl, "median"=medianCl, "sd"=sd, "number of populations"=noRF, "confid levels"=confCl)
+  return(v)
+}
+```
+
+Then, construct species occurrence matrices, where row is species, column is year, and presence=1 and absence=0
+#fixme: I think this is starting to work correctly, but double check.
+Increasing: chiPval <0.05 and trend = 1
+Decreasing: chiPval <0.05 and trend = -1
+Recurrent: runsPval <0.05 and trendPlus = 10
+```{r}
+#fixme: This matrix needs to be created separately for each different treatment, so it can be repeated with the code.
+fa_matrix <- surv %>%
+  filter(Watershed == "0sub") %>% #0spb, 0sub
+  group_by(Recyear, Species)  %>%
+  summarize(n=n()) %>%
+  mutate_at(vars(n), ~replace(., . > 1, 1)) %>%
+  mutate(row=row_number()) %>%
+  spread(Recyear, row, fill=0) %>%
+  mutate(across(3:"2011", ~replace(., . >1, 1)))
+
+# This is how we run it for each treatment. Need to compile the results better for summarizing and plotting
+
+#create an empty dataframe to store the results
+res <- data.frame(species = "sp", treatment = "trmt", prop=0, traj="traj", trendPlus=0, chiPval=0, runsPval=0, trend=0, bsline=0)
+
+for(i in 1:nrow(fa_matrix_paonly)) {
+  trmt="fa"
+  sp = fa_matrix[i, 1][[1]]
+  spdat <- as.numeric(as.matrix(fa_matrix[i,c(3:ncol(fa_matrix))]))
+  print(paste0("species ", i, " results"))
+  #get proportion of years present
+  prop <- sum(spdat)/length(spdat)
+  #could write a series of ifelse statements to look at output and label by category, then save into a table with relevant numeric result labeled by each species
+  if(sum(spdat) == length(spdat)) {
+    traj <- "no change"
+    print(paste0(sp, " ", traj))
+    res <- rbind(res, data.frame(species=sp, treatment=trmt, prop=prop, traj=traj,
+                                 trendPlus=NA, chiPval=NA, runsPval=NA, trend=NA, bsline=NA))
+    next
+  }
+  else{
+    vals <- getTrends(spdat)
+    if(vals$chiPval < 0.05) {
+      if(trend == 1) { traj = "increasing"
+      }
+      else { traj = "decreasing"
+      }
+      res <- rbind(res, data.frame(species=sp, treatment=trmt, prop=prop, traj=traj, 
+                                   trendPlus=vals$trendPlus, chiPval=vals$chiPval, runsPval=vals$runsPval,
+                                   trend=vals$trend, bsline=vals$bsline))
+    }
+    else if (vals$runsPval <0.05) { traj = "recurrent"
+          res <- rbind(res, data.frame(species=sp, treatment=trmt, prop=prop, traj=traj, trendPlus=vals$trendPlus,
+                                       chiPval=vals$chiPval, runsPval=vals$runsPval, trend=vals$trend,
+                                       bsline=vals$bsline))
+    }
+    else { traj = "random"
+          res <- rbind(res, data.frame(species=sp, treatment=trmt, prop=prop, traj=traj, 
+                                       trendPlus=vals$trendPlus, chiPval=vals$chiPval, runsPval=vals$runsPval,
+                                       trend=vals$trend, bsline=vals$bsline))
+    }
+  }
+  print(paste0(sp, " ", traj))
+}
+
+#fa_matrix: 8 spp; no increasing or decreasing species, 2 recurrent species (all others random or no change)
+#fb_matrix: 8 spp; 1 increasing, 1 recurrent, no decreasing
+#wa_matrix: 10 spp; no increasing or decreasing species, 2 recurrent
+#wb_matrix: 10 spp; all random or no change
+#spb_matrix: 13 spp; 1 increasing
+#sub_matrix: 12 spp; 1 recurrent
 ```
 
