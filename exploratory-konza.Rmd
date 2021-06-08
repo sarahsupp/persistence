@@ -1,0 +1,21 @@
+---
+title: "exploratory-konza"
+author: "Sarah Supp"
+date: "6/7/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(tidyverse)
+```
+
+bring in the Konza Praire small mammal burn study data from 1994-2011. 
+Burns at varying intevals, can compare periodic disturbance effects from no, infrequent, frequent
+```{r}
+dat <- read_csv("CSM041.csv")
+surv <- read_csv("CSM042.csv")
+
+```
+
