@@ -40,7 +40,8 @@ Plot the counts of species (lump spring and fall samples) across years and plot
 surv <- surv %>%
   filter(Watershed != "004b") %>%
   filter(Season != "dec") %>%
-  filter(Recyear != 1993)
+  filter(Recyear != 1993) %>%
+  filter(Species != "x" & Species !="p?")
 
 #summing across spring and autumn samples, because lumping annually makes sense here
 surv %>%
@@ -272,32 +273,43 @@ Increasing: chiPval <0.05 and trend = 1
 Decreasing: chiPval <0.05 and trend = -1
 Recurrent: runsPval <0.05 and trendPlus = 10
 ```{r}
-#fixme: This matrix needs to be created separately for each different treatment, so it can be repeated with the code.
-fa_matrix <- surv %>%
-  filter(Watershed == "0sub") %>% #0spb, 0sub
+# This is how we run it for each treatment. Need to compile the results better for summarizing and plotting
+
+#create an empty dataframe to store the results
+res <- data.frame(species = "sp", treatment = "trmt", prop=0, traj="traj", trendPlus=0, chiPval=0, runsPval=0, trend=0, bsline=0)
+
+incid <- data.frame(species=NA, year=NA, incidence=NA, treatment=NA)
+
+#identify unique treatments
+treatment <- unique(surv$Watershed)
+
+for(t in treatment){
+  trmt=t
+
+  trmt_matrix <- surv %>%
+  filter(Watershed == t) %>% #0spb, 0sub
   group_by(Recyear, Species)  %>%
   summarize(n=n()) %>%
   mutate_at(vars(n), ~replace(., . > 1, 1)) %>%
   mutate(row=row_number()) %>%
   spread(Recyear, row, fill=0) %>%
   mutate(across(3:"2011", ~replace(., . >1, 1)))
-
-# This is how we run it for each treatment. Need to compile the results better for summarizing and plotting
-
-#create an empty dataframe to store the results
-res <- data.frame(species = "sp", treatment = "trmt", prop=0, traj="traj", trendPlus=0, chiPval=0, runsPval=0, trend=0, bsline=0)
-
-for(i in 1:nrow(fa_matrix_paonly)) {
-  trmt="fa"
-  sp = fa_matrix[i, 1][[1]]
-  spdat <- as.numeric(as.matrix(fa_matrix[i,c(3:ncol(fa_matrix))]))
-  print(paste0("species ", i, " results"))
+  
+  long <- trmt_matrix %>%
+    select(-n) %>%
+    pivot_longer(!Species, names_to = "year", values_to = "incidence") %>%
+    mutate(treatment=t) %>%
+    rename(species=Species)
+  incid <- rbind(incid, long)
+  
+for(i in 1:nrow(trmt_matrix)) {
+  sp = trmt_matrix[i, 1][[1]]
+  spdat <- as.numeric(as.matrix(trmt_matrix[i,c(3:ncol(trmt_matrix))]))
   #get proportion of years present
   prop <- sum(spdat)/length(spdat)
   #could write a series of ifelse statements to look at output and label by category, then save into a table with relevant numeric result labeled by each species
   if(sum(spdat) == length(spdat)) {
     traj <- "no change"
-    print(paste0(sp, " ", traj))
     res <- rbind(res, data.frame(species=sp, treatment=trmt, prop=prop, traj=traj,
                                  trendPlus=NA, chiPval=NA, runsPval=NA, trend=NA, bsline=NA))
     next
@@ -305,7 +317,7 @@ for(i in 1:nrow(fa_matrix_paonly)) {
   else{
     vals <- getTrends(spdat)
     if(vals$chiPval < 0.05) {
-      if(trend == 1) { traj = "increasing"
+      if(vals$trend == 1) { traj = "increasing"
       }
       else { traj = "decreasing"
       }
@@ -324,9 +336,10 @@ for(i in 1:nrow(fa_matrix_paonly)) {
                                        trend=vals$trend, bsline=vals$bsline))
     }
   }
-  print(paste0(sp, " ", traj))
 }
-
+}
+res <- res[-1,]
+incid <- incid[-1,]
 #fa_matrix: 8 spp; no increasing or decreasing species, 2 recurrent species (all others random or no change)
 #fb_matrix: 8 spp; 1 increasing, 1 recurrent, no decreasing
 #wa_matrix: 10 spp; no increasing or decreasing species, 2 recurrent
@@ -334,4 +347,77 @@ for(i in 1:nrow(fa_matrix_paonly)) {
 #spb_matrix: 13 spp; 1 increasing
 #sub_matrix: 12 spp; 1 recurrent
 ```
+
+
+OK now that we have the results, let's compare the proportions, and trajectories
+```{r}
+res %>%
+  group_by(treatment, traj) %>%
+  summarize(count=n()) %>%
+  ggplot(aes(traj, count)) + geom_bar(stat="identity", aes(fill=treatment), position="dodge")
+```
+
+merging datasets for a bigger plot
+spB; not burned?
+FB; Fall Burn; burned only in wet years
+SuB; Burned biennially (every 2 years)
+WA; Winter Burn; unburned for 3 consecutive years, then burned for 3 consecutive years
+FA; Fall Burn; 4 year burn treatment
+WB; Winter Burn; 4 year burn treatment
+```{r}
+#merge the results with the incidence dataframe for later plotting
+test <- inner_join(incid, res) %>%
+  mutate(treatment = replace(treatment, treatment=="0spb", "0 burns"),
+         treatment = replace(treatment, treatment=="00fa", "4-yr fall burn"),
+         treatment = replace(treatment, treatment=="00fb", "wet year fall burn"),
+         treatment = replace(treatment, treatment=="00wa", "3-yr con winter burn"),
+         treatment = replace(treatment, treatment=="00wb", "4-yr winter burn"),
+         treatment = replace(treatment, treatment=="0sub", "2-yr burn"))
+
+
+ggplot(test, aes(prop, year, fill=as.factor(incidence))) + 
+  geom_tile(alpha=0.5, aes(col=species)) + 
+  scale_fill_manual(values=c("white","blue")) +
+  facet_grid(treatment~traj) + # compare with wrapping on treatment
+  theme_bw() + 
+  theme(legend.position = "none")
+```
+
+
+compare species trends
+```{r}
+unique(res$species)
+res %>%
+  filter(species == "rmont")
+
+#PL switches: recurrent on 00fa, nochange on 0sub, random all others
+#RM switches: increasing on 00fb, random all others
+#ST switches: recurrent on 00fb and 00wa, random all others
+#CH switches: recurrent on 00wa, random others (not present on all)
+#NF switches: increasing on 0spb, random others (not present on all)
+```
+
+compare proportions for each category
+```{r}
+res %>%
+  group_by(treatment) %>%
+  summarize(spcount=n_distinct(species), 
+            trajcount=n_distinct(traj)) %>%
+  ggplot(aes(spcount, trajcount)) + geom_point(aes(col=treatment)) + stat_smooth(method="lm")
+
+proptraj <- res %>%
+  group_by(treatment) %>%
+  mutate(spcount=n_distinct(species), 
+            trajcount=n_distinct(traj)) %>%
+  group_by(treatment, traj) %>%
+  summarize(prop_traj=n()/spcount,
+            prop_avg=mean(prop))
+
+ggplot(proptraj, aes(treatment, prop_traj)) + geom_bar(aes(fill=traj), stat="identity", position="dodge", col="white")
+
+ggplot(proptraj, aes(treatment, prop_avg)) + geom_bar(aes(fill=traj), 
+                                                      stat="identity", position="dodge", col="white") + 
+  geom_hline(yintercept=c(0.66, 0.33), linetype="dashed")
+```
+
 
