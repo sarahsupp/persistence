@@ -1,0 +1,58 @@
+---
+title: "NSF CAREER Gantt Chart"
+author: "Sarah Supp"
+date: "7/6/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+# install.packages("remotes")
+#remotes::install_github("giocomai/ganttrify")
+library(ganttrify)
+```
+
+make a practice chart
+```{r}
+ganttrify(project = ganttrify::test_project,
+          project_start_date = "2021-03",
+          font_family = "Roboto Condensed")
+```
+
+To make your own, you need a first table with column names for wp, activity, start_date, and end_date, and a second table with column names for activity, spot_type, and spot_date. Dates are integers that are the number of months since project start time, and you can specify project start date in the ganttrify command to plot dates instead of months.
+
+Make a rough table to use for NSF CAREER 2021 proposal submission.
+```{r}
+#Main Project Table
+
+career <- data.frame(wp=c("Population Study (Aim 1a)", 
+                          "Community Study (Aim 1b)", 
+                          "Synthesis Study (Aim 1c)",
+                          "Education Activities (Aim 2)", "Education Activities (Aim 2)", "Education Activities (Aim 2)", "Education Activities (Aim 2)", "Education Activities (Aim 2)", "Education Activities (Aim 2)", "Education Activities (Aim 2)", "Education Activities (Aim 2)", "Education Activities (Aim 2)", "Education Activities (Aim 2)", "Education Activities (Aim 2)", "Education Activities (Aim 2)",
+                          "Outreach Activities (Aim 3)", 
+                          "Project Personnel", "Project Personnel", "Project Personnel", "Project Personnel", "Project Personnel", "Project Personnel", "Project Personnel", "Project Personnel", "Project Personnel", "Project Personnel"), 
+                     activity = c("1a: process data", "1b: calculate diversity", "1c: compare effect sizes", 
+                                  "2a: course development", "2a: new course", "2a: new course", "2a: student surveys", "2a: student surveys", "2a: student surveys", "2a: student surveys", "2a: undergraduate research training", "URA evaluation", "URA evaluation", "URA evaluation", "URA evaluation",
+                                  "3: initial cohort", 
+                                  "Data Analyst", "Postdoc", 
+                                  "Undergraduate Student (part time)", "Undergraduate Student (part time)", "Undergraduate Student (part time)", "Undergraduate Student (part time)", 
+                                  "Undergraduate Student (summer)", "Undergraduate Student (summer)", "Undergraduate Student (summer)", "Undergraduate Student (summer)"), 
+                     start_date=c(3, 12, 36, 28, 45, 57, 45, 48, 57, 60, 5, 15, 27, 39, 51, 36, 1, 12, 5, 10, 53, 58, 14, 26, 38, 50), 
+                     end_date=c(24, 48, 60, 35, 48, 60, 45, 48, 57, 60, 60, 15, 27, 39, 51, 42, 12, 48, 7, 12, 55, 60, 15, 27, 39, 51))
+
+```
+
+Now, try to plot it
+```{r}
+ganttrify(project = career,
+          project_start_date = "2022-05",
+          month_breaks = 6,
+          mark_years = TRUE,
+          font_family = "Roboto Condensed") +
+  ggplot2::labs(title = "NSF CAREER 2022-2027",
+                subtitle = "Synthesizing the impacts of pulse and press disturbance on temporal persistence",
+                caption = "Figure 5. An approximate timeline for all major project activities, assuming a May 2022 start date.")
+```
+
+
