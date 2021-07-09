@@ -413,11 +413,28 @@ proptraj <- res %>%
   summarize(prop_traj=n()/spcount,
             prop_avg=mean(prop))
 
+res <- res %>%
+    mutate(treatment = replace(treatment, treatment=="0spb", "0 burns"),
+         treatment = replace(treatment, treatment=="00fa", "4-yr fall burn"),
+         treatment = replace(treatment, treatment=="00fb", "wet year fall burn"),
+         treatment = replace(treatment, treatment=="00wa", "3-yr con winter burn"),
+         treatment = replace(treatment, treatment=="00wb", "4-yr winter burn"),
+         treatment = replace(treatment, treatment=="0sub", "2-yr burn"))
+
 ggplot(proptraj, aes(treatment, prop_traj)) + geom_bar(aes(fill=traj), stat="identity", position="dodge", col="white")
 
 ggplot(proptraj, aes(treatment, prop_avg)) + geom_bar(aes(fill=traj), 
                                                       stat="identity", position="dodge", col="white") + 
   geom_hline(yintercept=c(0.66, 0.33), linetype="dashed")
+
+ggplot(res, aes(treatment, prop)) + geom_boxplot(aes(col=traj)) + 
+  geom_hline(yintercept=c(0.66, 0.33), linetype="dashed") +
+  theme_bw()
+
+
+ggplot(res, aes(treatment, prop)) + geom_boxplot(aes(col=treatment)) + 
+  geom_hline(yintercept=c(0.66, 0.33), linetype="dashed") +
+  theme_bw()
 ```
 
 
