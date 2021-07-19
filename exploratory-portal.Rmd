@@ -1,0 +1,392 @@
+---
+title: "exploratory-portal"
+author: "Sarah Supp"
+date: "7/19/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+
+library(tidyverse)
+
+library(tseries)
+library(betapart)
+library(vegan)
+
+set.seed(123)
+```
+
+Bring in the portal data. 
+This data was cleaned for individual tag recounts in Supp et al. 2015
+```{r}
+dat <- read_csv("portal-examples/rawdata/cleaned_1989-2009.csv")
+```
+
+Make some basic exploratory plots and summaries
+***warning*** I have not yet investigated or controlled for sampling variation among years, and will want to double check for that. Just an initial start to getting code down that will work as proof of concept, and it should be pretty close. Very few months are skipped at Portal.
+
+Plot the counts of species (lump across monthly samples) across years and plot. For now, I'll just use the control plots (1, 2, 4, 8, 9, 11, 12, 14, 17, 22).
+Treatment 1 = control, 2 = krat exclosure, 3 = total rodent exclosure
+```{r}
+#remove treatment plots
+dat <- dat %>%
+  #filter(plot %in% c(1,2,4,8,9,11,12,14,17,22))
+  filter(Treatment_Number != 3) %>%
+  mutate(Treatment_Number = as.factor(Treatment_Number))
+
+#summing across monthly samples, because lumping annually makes sense here
+dat%>%
+  group_by(Treatment_Number, yr) %>%
+  summarize(spcount = n_distinct(species)) %>%
+  ggplot(aes(yr, spcount, group=Treatment_Number)) + 
+  geom_point(aes(col=Treatment_Number)) + 
+  stat_smooth(method="lm") +
+  facet_wrap(~Treatment_Number)
+```
+
+Calculate species persistence as proportion of years present for each treatment
+```{r}
+dat %>%
+  group_by(Treatment_Number, species) %>%
+  summarize(num_years=n_distinct(yr)) %>%
+  ggplot(aes(species, num_years)) + geom_point(aes(col=Treatment_Number)) + facet_wrap(~Treatment_Number)
+
+tot_years=length(unique(dat$yr))
+
+persistence <- dat %>%
+  group_by(Treatment_Number, species) %>%
+  summarize(num_years = n_distinct(yr), 
+            prop_years = round(num_years/tot_years,3))
+
+ggplot(persistence, aes(species, prop_years)) + geom_point(aes(col=Treatment_Number)) + facet_wrap(~Treatment_Number)
+
+```
+
+Try Gotelli and Faye's code out for incidence patterns
+First, the functions
+```{r}
+#Classification scheme
+getTrends<-function(x) {
+  
+  time <- rep("late",length(x))
+  time[1:(round(length(x)/2))] <- "early"
+  
+  # tabulate f
+  z_x <- table(x,time)
+  
+  tslen<-length(x)
+  tssum<-sum(x)
+  l<-c()
+  
+  for(k in 1:(tslen-1)){
+    j<-abs(x[k+1]-x[k])
+    l<-c(l, j)
+    v<-sum(l)
+  }
+  
+  bsline<-x[1]
+  
+  if(tslen>tssum) {
+    
+    rownames(z_x) <- c("absent","present")
+    # get p value
+    p_val <- chisq.test(z_x)$p.val
+    
+    # get early and late fractions
+    f_early <- z_x["present","early"]/sum(z_x[,1])
+    f_late <- z_x["present","late"]/sum(z_x[,2])
+   
+    if((f_early > f_late) & (p_val <= 0.05)) trend<--1
+    if((f_early < f_late) & (p_val <= 0.05)) trend<-1
+    if(p_val > 0.05) trend<-0
+    runsPV<-runs.test(as.factor(x),alternative="less")
+    runsTestPV<-runsPV$p.value
+    if(runsTestPV<0.05) trendPlus<-10
+    if(runsTestPV>0.05)trendPlus<-5
+  }
+  if(tslen==tssum) {
+    p_val <- NA
+    f_early <- NA
+    f_late <- NA
+    runsTestPV<-NA
+    trend<-NA
+    trendPlus<-NA
+  }
+  
+  statSumm<-list("trendPlus"=trendPlus, "chiPval"=p_val, "runsPval"=runsTestPV, 
+                 "trend"=trend, "bsline"=bsline)
+  return(statSumm)
+} 
+
+
+#Calculating compositional dissimilarity
+getBeta<-function(df) {
+  
+  yr<-unique(df[, 1]) 
+  df<-df[,-1]
+  bindf<-df 
+  bindf[bindf>0]<-1
+  getBas<-beta.pair(df, index.family="jac")$beta.jac
+  getChao<-vegdist(bindf, method="chao")
+  
+  basJac<-c(1, getBas[1:(nrow(spec_df)-1)])
+  chaoJac<-c(1, getChao[1:(nrow(spec_df2)-1)])
+  
+  df_out<-data.frame(Year=yr, J=basJac, chaoJac=chaoJac)
+ 
+  return(df_out)
+} 
+
+#Randomisation functions
+## where t1 is the long form time series and p1 is the subset of species with the classification to be randomised
+
+### this first function takes account only of presence and absence
+
+getRandomisation<-function(t1, p1) {
+  
+  df<-data.frame()
+  nameRow<-c()
+  
+  m1<-as.data.frame(pivot_wider(t1, names_from=Year, values_from=Abundance))
+  m1[is.na(m1)]<-0
+  nameCol<-unique(t1$Year)
+  
+  for(i in 1:length(m1$Species)) {
+    x<-m1[i,]
+    sp<-as.vector(m1[i,1])
+    dird<-as.vector(unique(p1$Species))
+    if(sp %in% dird) {
+      nameRow<-c(nameRow, sp)
+      x<-x[-1]
+      x[x>0]<-1
+      y<-as.data.frame(t(x))[,1]
+      v<-sample(y[-1])
+      z<-c(y[1], v)
+      df<-rbind(df, z)
+    }
+    if(!sp %in% dird) {
+      nameRow<-c(nameRow, sp)
+      x<-x[-1]
+      x[x>0]<-1
+      y<-as.data.frame(t(x))[,1]
+      z<-y
+      df<-rbind(df, z)
+    }
+  }
+  
+  colnames(df)<-nameCol
+  rownames(df)<-nameRow
+ 
+  nameCR<-c("Species", nameCol)
+  names(df)<-nameCR
+  df2<-as.data.frame(t(df))
+  df3<-df2[-1,]
+  names(df3)
+  names(df3)<-nameRow
+  
+  return(df3)
+}
+
+### function to replace sample to shuffle weighted by abundance
+
+abun_shuffle <- function() {
+  
+  occur_shuf <- rep(0,length(occur)) # set up an empty vector
+  index <- seq_along(occur) # set up vector of indices
+  presence <- sample(x=index,size=sum(occur),prob=abun) # select index values 
+  occur_shuf[presence] <- 1 #assign occurrences
+  return(occur_shuf)
+} # end of abun_shuffle
+# -------------------------------------
+
+
+## revised randomisation function which now includes the vector of abundances for a time series
+
+getAbundRandomisation<-function(t1, p1, rf1) {
+  
+  df<-data.frame()
+  nameRow<-c()
+  
+  m1<-as.data.frame(pivot_wider(t1, names_from=Year, values_from=Abundance))
+  m1[is.na(m1)]<-0
+  nameCol<-unique(t1$Year)
+  
+  for(i in 1:length(m1$Species)) {
+    x<-m1[i,]
+    sp<-as.vector(m1[i,1])
+    dird<-as.vector(unique(p1$Species))
+    if(sp %in% dird) {
+      nameRow<-c(nameRow, sp)
+      x<-x[-1]
+      x[x>0]<-1
+      y<-as.data.frame(t(x))[,1]
+      v<-abun_shuffle(y[-1], rf1[-1])
+      z<-c(y[1], v)
+      df<-rbind(df, z)
+    }
+    if(!sp %in% dird) {
+      nameRow<-c(nameRow, sp)
+      x<-x[-1]
+      x[x>0]<-1
+      y<-as.data.frame(t(x))[,1]
+      z<-y
+      df<-rbind(df, z)
+    }
+  }
+  
+  colnames(df)<-nameCol
+  rownames(df)<-nameRow
+  
+  nameCR<-c("Species", nameCol)
+  names(df)<-nameCR
+  df2<-as.data.frame(t(df))
+  df3<-df2[-1,]
+  names(df3)
+  names(df3)<-nameRow
+  
+  return(df3)
+}
+
+#Other functions
+getSummStats<-function(x, y, namesCl) {
+  x<-na.omit(x)
+  y<-na.omit(y)
+  names(x)<-c("nx")
+  names(y)<-c("ny")
+  meanCl<-mean(x$nx)
+  medianCl<-median(x$nx)
+  sd<-sd(x$nx)
+  noRF<-sum(y$ny)
+  confCl<-round(quantile(x$nx, probs=c(0.025,0.975)), 4)
+  v<-c("class"=namesCl, "mean"=meanCl, "median"=medianCl, "sd"=sd, "number of populations"=noRF, "confid levels"=confCl)
+  return(v)
+}
+```
+
+
+Then, construct species occurrence matrices, where row is species, column is year, and presence=1 and absence=0
+#fixme: I think this is starting to work correctly, but double check.
+Increasing: chiPval <0.05 and trend = 1
+Decreasing: chiPval <0.05 and trend = -1
+Recurrent: runsPval <0.05 and trendPlus = 10
+```{r}
+# This is how we run it for each treatment. Need to compile the results better for summarizing and plotting
+
+#create an empty dataframe to store the results
+res <- data.frame(species = "sp", treatment = "trmt", prop=0, traj="traj", trendPlus=0, chiPval=0, runsPval=0, trend=0, bsline=0)
+
+incid <- data.frame(species=NA, year=NA, incidence=NA, treatment=NA)
+
+#identify unique treatments
+treatment <- unique(dat$Treatment_Number)
+
+for(t in treatment){
+  trmt=t
+
+  trmt_matrix <- dat %>%
+  filter(Treatment_Number == t) %>% #0spb, 0sub
+  group_by(yr, species)  %>%
+  summarize(n=n()) %>%
+  mutate_at(vars(n), ~replace(., . > 1, 1)) %>%
+  mutate(row=row_number()) %>%
+  spread(yr, row, fill=0) %>%
+  mutate(across(3:"2009", ~replace(., . >1, 1)))
+  
+  long <- trmt_matrix %>%
+    select(-n) %>%
+    pivot_longer(!species, names_to = "year", values_to = "incidence") %>%
+    mutate(treatment=t) #%>%
+    #rename(species=Species)
+  incid <- rbind(incid, long)
+  
+for(i in 1:nrow(trmt_matrix)) {
+  sp = trmt_matrix[i, 1][[1]]
+  spdat <- as.numeric(as.matrix(trmt_matrix[i,c(3:ncol(trmt_matrix))]))
+  #get proportion of years present
+  prop <- sum(spdat)/length(spdat)
+  #could write a series of ifelse statements to look at output and label by category, then save into a table with relevant numeric result labeled by each species
+  if(sum(spdat) == length(spdat)) {
+    traj <- "no change"
+    res <- rbind(res, data.frame(species=sp, treatment=trmt, prop=prop, traj=traj,
+                                 trendPlus=NA, chiPval=NA, runsPval=NA, trend=NA, bsline=NA))
+    next
+  }
+  else{
+    vals <- getTrends(spdat)
+    if(vals$chiPval < 0.05) {
+      if(vals$trend == 1) { traj = "increasing"
+      }
+      else { traj = "decreasing"
+      }
+      res <- rbind(res, data.frame(species=sp, treatment=trmt, prop=prop, traj=traj, 
+                                   trendPlus=vals$trendPlus, chiPval=vals$chiPval, runsPval=vals$runsPval,
+                                   trend=vals$trend, bsline=vals$bsline))
+    }
+    else if (vals$runsPval <0.05) { traj = "recurrent"
+          res <- rbind(res, data.frame(species=sp, treatment=trmt, prop=prop, traj=traj, trendPlus=vals$trendPlus,
+                                       chiPval=vals$chiPval, runsPval=vals$runsPval, trend=vals$trend,
+                                       bsline=vals$bsline))
+    }
+    else { traj = "random"
+          res <- rbind(res, data.frame(species=sp, treatment=trmt, prop=prop, traj=traj, 
+                                       trendPlus=vals$trendPlus, chiPval=vals$chiPval, runsPval=vals$runsPval,
+                                       trend=vals$trend, bsline=vals$bsline))
+    }
+  }
+}
+}
+res <- res[-1,]
+incid <- incid[-1,]
+
+#control (1)   - 21 species; 4 no change, 7 random, 9 recurrent, 1 increasing, 0 decreasing
+#exclosure (2) - 19 species; 0 no change, 8 random, 9 recurrent, 1 increasing, 1 decreasing
+```
+
+OK now that we have the results, let's compare the proportions, and trajectories
+```{r}
+res %>%
+  group_by(treatment, traj) %>%
+  summarize(count=n()) %>%
+  ggplot(aes(traj, count)) + geom_bar(stat="identity", aes(fill=treatment), position="dodge")
+```
+
+```{r}
+#merge the results with the incidence dataframe for later plotting
+test <- inner_join(incid, res) %>%
+  mutate(treatment = replace(treatment, treatment==1, "control"),
+         treatment = replace(treatment, treatment==2, "exclosure"))
+
+
+ggplot(test, aes(prop, year, fill=as.factor(incidence))) + 
+  geom_tile(alpha=0.5, aes(col=species)) + 
+  scale_fill_manual(values=c("white","blue")) +
+  facet_grid(treatment~traj) + # compare with wrapping on treatment
+  geom_vline(xintercept=c(0.33, 0.67)) +
+  theme_bw() + 
+  theme(legend.position = "none")
+
+#OK, but too big to see very well
+ggplot(test, aes(year, species, fill=as.factor(incidence))) + 
+  geom_tile(alpha=0.5, aes(col=species)) + 
+  scale_fill_manual(values=c("white","blue")) +
+  theme_bw() + 
+  theme(legend.position = "none") + 
+    facet_grid(traj~treatment)
+
+#for NSF proposal example
+# Reorder following the value of another column:
+test %>%
+  mutate(species = fct_reorder(species, prop)) %>%
+  ggplot(aes(as.numeric(year), species, fill=as.factor(incidence))) + 
+  geom_tile(alpha=0.5, col="white") + 
+  scale_fill_manual(values=c("white","blue")) +
+  scale_x_continuous(breaks=seq(1989, 2009, 5)) +
+  xlab("Year") +
+  facet_wrap(~treatment) + # compare with wrapping on treatment
+  theme_classic() + 
+  theme(legend.position = "none")
+
+```
+
