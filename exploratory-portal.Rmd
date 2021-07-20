@@ -375,18 +375,22 @@ ggplot(test, aes(year, species, fill=as.factor(incidence))) +
   theme(legend.position = "none") + 
     facet_grid(traj~treatment)
 
-#for NSF proposal example
+#for NSF proposal example, controls only
 # Reorder following the value of another column:
 test %>%
+  filter(treatment == "control") %>%
   mutate(species = fct_reorder(species, prop)) %>%
-  ggplot(aes(as.numeric(year), species, fill=as.factor(incidence))) + 
-  geom_tile(alpha=0.5, col="white") + 
-  scale_fill_manual(values=c("white","blue")) +
+  ggplot(aes(as.numeric(year), species)) + 
+  geom_point(aes(col=as.factor(traj)), shape=15, size=5) + 
+  geom_tile(col="white", aes(fill=as.factor(incidence))) + 
+  scale_colour_viridis_d() +
+  scale_fill_manual(values=c("white", NA)) +
   scale_x_continuous(breaks=seq(1989, 2009, 5)) +
   xlab("Year") +
   facet_wrap(~treatment) + # compare with wrapping on treatment
   theme_classic() + 
   theme(legend.position = "none")
 
+ggsave("portal-incidence.png", height=5, width=5)
 ```
 
