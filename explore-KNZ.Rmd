@@ -1,0 +1,58 @@
+---
+title: "explore-KNZ"
+author: "Sarah Supp"
+date: "3/4/2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(tidyverse)
+```
+Import some KNZ datasets
+```{r}
+birds <- read_csv("CBC011.csv")
+birdsT<- read_csv("CBP011.csv")
+fish <- read_csv("CFC011.csv")
+fishW <- read_csv("CFP011.csv")
+Hoppersite <- read_csv("CGR021.csv")
+hoppers <- read_csv("CGR022.csv")
+smammals <- read_csv("CSM012_0.csv")
+smammal2 <- read_csv("CSM042.csv")
+smammal3 <- read_csv("CSM052.csv")
+```
+
+count number of unique species
+```{r}
+birdS <- length(unique(birds$Species))
+birdlist <- unique(birds$Species)
+
+birdsTS <- length(unique(birdsT$SPECNAME))
+birdsTlist <- unique(birdsT$SPECNAME)
+
+# at least 4 of these appear to be non-fish
+fishS <- length(unique(fish$Species))
+fishlist <- unique(fish$Species)
+
+# 1 of these is NA
+fishWS <- length(unique(fishW$ScienceName))
+fishWlist <- unique(fishW$ScienceName)
+
+#at least some of these are genera only, would need to look closer
+hoppersS <- length(unique(hoppers$SPECIES))
+hopperslist <- unique(hoppers$SPECIES)
+
+#at least 4 of these are non smammal or genera only
+smammalsS <- length(unique(smammals$Species))
+smammalslist <- unique(smammals$Species)
+
+#at least 2 of these are genera only or unknown?
+smammal2S<- length(unique(smammal2$Species))
+smammal2list <- unique(smammal2$Species)
+
+#at least 2 of these are genera only or non smammal?
+smammal3S<- length(unique(smammal3$Species))
+smammal3list <- unique(smammal3$Species)
+```
+
