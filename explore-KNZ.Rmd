@@ -361,6 +361,16 @@ no4d_wide <- pa_no4d %>%
   ungroup()
 
 #replace abundance values with 1 (presence)
+no4d_wide_1s <- no4d_wide %>% 
+ #filter(Species %in% c("rmeg", "bh", "sh", "nf", "mm", "rmon")) %>%
+  mutate_if(is.numeric, ~1 * (. > 0)) %>%
+  select(-Watershed) %>%
+  pivot_longer(!Species, names_to="year", values_to="present")
+
+#make a plot with the colored boxes to show presence/absence over time, shade and order by overall persistence 
+#TODO
+
+#replace abundance values with 1 (presence)
 #Let's look at just a few species here, rmeg, bh, sh, nf, mm, rmon
 no4d_wide_pa <- no4d_wide %>% 
  #filter(Species %in% c("rmeg", "bh", "sh", "nf", "mm", "rmon")) %>%
