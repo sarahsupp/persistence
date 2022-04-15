@@ -27,6 +27,7 @@ hoppers <- read_csv("CGR022.csv")
 smammals <- read_csv("CSM012_0.csv")
 smammal2 <- read_csv("CSM042.csv")
 smammal3 <- read_csv("CSM052.csv")
+plants <- read_csv("PVC021.csv")
 ```
 
 count number of unique species
@@ -60,6 +61,10 @@ smammal2list <- unique(smammal2$Species)
 #at least 2 of these are genera only or non smammal?
 smammal3S<- length(unique(smammal3$Species))
 smammal3list <- unique(smammal3$Species)
+
+#at least 2 of these are genera only or non smammal?
+plantsS<- length(unique(plants$SpeCode))
+plantslist <- unique(plants$SpeCode)
 ```
 
 Classification Scheme (Gotelli et al. 2022)
@@ -392,4 +397,38 @@ for (i in 1:nrow(no4d_matrix)) {
 }
 
 ```
+
+Make figures for an explanatory panel on the methods, using bh, nf, and sc from the grazed 4-year burn site
+```{r}
+#plot abundance trends for species over time in Watershed n04d with lm trend lines
+ggplot(pa_no4d %>% filter(Species=="sc"), aes(Recyear, count, group=Species)) + 
+  geom_point() + 
+ # geom_smooth(method="lm") +
+  xlab("Year") +
+  ylab("abundance") +
+  ylim(0,5) +
+  theme_bw()
+
+#check if slope of abundance change is significant
+modspex <- lm(count ~ Recyear, data=pa_no4d %>% filter(Species=="bh"))
+summary(modspex)
+
+#replace abundance values with 1 (presence)
+#Let's look at just a few species here, rmeg, bh, sh, nf, mm, rmon
+no4d_spex <- no4d_wide %>% 
+ filter(Species == "bh") %>%
+  mutate_if(is.numeric, ~1 * (. > 0)) %>%
+  mutate_all(~replace_na(.,0)) %>%
+  select(-Watershed, -Species)
+
+result <- getTrends(as.matrix(no4d_spex))
+result
+
+propyears <- sum(no4d_spex)/length(no4d_spex)
+propyears
+
+no4d_spex[1,]
+
+```
+
 
