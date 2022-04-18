@@ -1,0 +1,38 @@
+---
+title: "gantt-EAGER"
+author: "Sarah Supp"
+date: "4/18/2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(tidyverse)
+#library(devtools)
+#remotes::install_github("giocomai/ganttrify")
+library(ganttrify)
+
+proj <- read_csv("study_gantt.csv")
+```
+
+examples gantt chart
+```{r}
+ganttrify(project = ganttrify::test_project,
+          project_start_date = "2022-03")
+```
+
+Make my gantt chart
+```{r}
+ganttrify(project = proj,
+          project_start_date = "2022-08",
+          alpha_activity = 0.6, 
+          mark_years = TRUE,
+          month_breaks = 3, 
+          size_text_relative = 0.75) +
+  ggplot2::labs(caption = "Figure 5. An approximate timeline for all major project activities, assuming an August 1, 2022 start date.")
+
+ggsave("gantt-chart-EAGER2022.png", height=4, width=7)
+```
+
+
